@@ -1,3 +1,7 @@
+<p align="center">
+   <img src="background.gif" alt="Background GIF">
+</p>
+
 # PrimeMinerCPP
 
 **PrimeMinerCPP** is a high-performance prime number mining program implemented in CUDA and C++, designed to utilize the GPU for highly parallelized computations of prime numbers. The program uses the segmented sieve of Eratosthenes to efficiently find large primes in batches, leveraging the power of NVIDIA GPUs.
