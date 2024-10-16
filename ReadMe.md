@@ -6,6 +6,10 @@
 
 **PrimeMinerCPP** is a high-performance prime number mining program implemented in CUDA and C++, designed to utilize the GPU for highly parallelized computations of prime numbers. The program uses the segmented sieve of Eratosthenes to efficiently find large primes in batches, leveraging the power of NVIDIA GPUs.
 
+<div align="center">
+   <img src="./github/assets/prosncons.png" alt="Pros and Cons">
+</div>
+
 ## Features
 
 - **CUDA-accelerated** prime number generation, allowing the program to utilize your GPU for parallel computation.
@@ -13,6 +17,10 @@
 - **Batch processing**: Finds primes in large batches, reporting the number of primes found, total primes, and the number of digits in the largest prime found in each batch.
 - **Efficient file storage**: Saves primes to a file after each batch, allowing the program to resume from where it left off.
 - **Optimized for NVIDIA GPUs**: Uses CUDA to maximize performance on compatible GPUs.
+
+<div align="center">
+   <img src="./github/assets/features.png" alt="Prime Miner">
+</div>
 
 ## Author
 
@@ -28,6 +36,10 @@ To run PrimeMinerCPP, you will need:
 - **CUDA Toolkit** installed on your machine. Download from the [NVIDIA Developer Site](https://developer.nvidia.com/cuda-downloads).
 - **Visual Studio** (for Windows) or a compatible C++ compiler.
 - **nvcc**: The NVIDIA CUDA Compiler.
+
+<div align="center">
+   <img src="./github/assets/requirements.png" alt="Requirements">
+</div>
 
 ### Building the Project
 
