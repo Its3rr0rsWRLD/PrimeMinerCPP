@@ -10,43 +10,36 @@
 #define THREADS_PER_BLOCK 256
 #define SEGMENT_SIZE (1 << 22)
 
-__global__ void sieve_kernel(char* d_is_prime, long long low, long long high, int* d_primes, int num_primes) {
-    long long idx = blockIdx.x * blockDim.x + threadIdx.x;
-    long long stride = blockDim.x * gridDim.x;
+__device__ inline long long cuda_max(long long a, long long b) {
+    return (a > b) ? a : b;
+}
 
-    for (long long num = low + idx; num <= high; num += stride) {
-        if (num % 2 == 0 && num > 2) {
-            d_is_prime[num - low] = 0;
-            continue;
+__global__ void sieve_kernel(char* d_is_prime, long long low, long long high, int* d_primes, int num_primes) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    for (int i = idx; i < num_primes; i += blockDim.x * gridDim.x) {
+        int p = d_primes[i];
+        long long p_long = (long long)p;
+        long long start = cuda_max(p_long * p_long, ((low + p_long - 1) / p_long) * p_long);
+        if (start > high) continue;
+        for (long long j = start; j <= high; j += p_long) {
+            d_is_prime[j - low] = 0;
         }
-        
-        char is_prime = 1;
-        for (int j = 0; j < num_primes; ++j) {
-            int p = d_primes[j];
-            if (p * p > num) break;
-            if (num % p == 0) {
-                is_prime = 0;
-                break;
-            }
-        }
-        d_is_prime[num - low] = is_prime;
     }
 }
 
 std::vector<int> simple_sieve(int limit) {
-    std::vector<bool> is_prime(limit + 1, true);
-    is_prime[0] = is_prime[1] = false;
-
-    for (int p = 2; p * p <= limit; ++p) {
+    int sqrt_limit = static_cast<int>(std::sqrt(limit)) + 1;
+    std::vector<char> is_prime(sqrt_limit + 1, 1);
+    is_prime[0] = is_prime[1] = 0;
+    for (int p = 3; p * p <= sqrt_limit; p += 2) {
         if (is_prime[p]) {
-            for (int i = p * p; i <= limit; i += p) {
-                is_prime[i] = false;
+            for (int i = p * p; i <= sqrt_limit; i += 2 * p) {
+                is_prime[i] = 0;
             }
         }
     }
-
-    std::vector<int> primes;
-    for (int p = 2; p <= limit; ++p) {
+    std::vector<int> primes = {2};
+    for (int p = 3; p <= sqrt_limit; p += 2) {
         if (is_prime[p]) {
             primes.push_back(p);
         }
@@ -55,23 +48,23 @@ std::vector<int> simple_sieve(int limit) {
 }
 
 long long get_last_prime() {
-    std::ifstream infile(FILE_PATH, std::ios::in);
+    std::ifstream infile(FILE_PATH, std::ios::in | std::ios::ate);
     if (!infile.is_open()) {
         return 1;
     }
+    std::streampos size = infile.tellg();
+    if (size == 0) {
+        infile.close();
+        return 1;
+    }
+    char ch;
     infile.seekg(-1, std::ios_base::end);
-    if (infile.peek() == '\n') {
-        infile.seekg(-1, std::ios_base::cur);
-        int i = infile.tellg();
-        for (; i > 0; i--) {
-            infile.seekg(i, std::ios_base::beg);
-            if (infile.peek() == '\n') {
-                infile.get();
-                break;
-            }
+    while (infile.tellg() > 0) {
+        infile.get(ch);
+        if (ch == '\n') {
+            break;
         }
-    } else {
-        infile.seekg(0, std::ios_base::beg);
+        infile.seekg(-2, std::ios_base::cur);
     }
     std::string last_line;
     getline(infile, last_line);
@@ -117,9 +110,11 @@ int main() {
 
         cudaMemset(d_is_prime, 1, SEGMENT_SIZE * sizeof(char));
 
-        int blocks = (SEGMENT_SIZE + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+        int threadsPerBlock = THREADS_PER_BLOCK;
+        int blocks = (num_primes + threadsPerBlock - 1) / threadsPerBlock;
 
-        sieve_kernel<<<blocks, THREADS_PER_BLOCK>>>(d_is_prime, current, high, d_primes, num_primes);
+        sieve_kernel<<<blocks, threadsPerBlock>>>(d_is_prime, current, high, d_primes, num_primes);
+        cudaDeviceSynchronize();
 
         std::vector<char> h_is_prime(SEGMENT_SIZE);
         cudaMemcpy(h_is_prime.data(), d_is_prime, SEGMENT_SIZE * sizeof(char), cudaMemcpyDeviceToHost);
