@@ -61,7 +61,7 @@ long long get_last_prime() {
     infile.seekg(-1, std::ios_base::end);
     while (infile.tellg() > 0) {
         infile.get(ch);
-        if (ch == '\n') {
+        if (ch == ' ') {
             break;
         }
         infile.seekg(-2, std::ios_base::cur);
@@ -78,7 +78,7 @@ long long get_last_prime() {
 void bulk_save_primes(const std::vector<long long>& primes) {
     std::ofstream outfile(FILE_PATH, std::ios::app);
     for (const auto& prime : primes) {
-        outfile << prime << "\n";
+        outfile << prime << " ";
     }
     outfile.close();
 }
