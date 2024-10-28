@@ -1,5 +1,5 @@
 <p align="center">
-   <img src="background.gif" alt="Background GIF">
+   <img src="./github/assets/background.gif" alt="Background GIF">
 </p>
 
 # PrimeMinerCPP
@@ -15,7 +15,8 @@
 - **CUDA-accelerated** prime number generation, allowing the program to utilize your GPU for parallel computation.
 - **Segmented Sieve of Eratosthenes**, optimized for finding primes in large ranges.
 - **Batch processing**: Finds primes in large batches, reporting the number of primes found, total primes, and the number of digits in the largest prime found in each batch.
-- **Efficient file storage**: Saves primes to a file after each batch, allowing the program to resume from where it left off.
+- **Efficient file storage**: Saves primes to a binary file after each batch, allowing the program to resume from where it left off.
+- **Conversion to Plain Text**: Provides an option to convert the binary stored primes to a human-readable plain text format.
 - **Optimized for NVIDIA GPUs**: Uses CUDA to maximize performance on compatible GPUs.
 
 <div align="center">
@@ -61,7 +62,7 @@ To run PrimeMinerCPP, you will need:
 
 ## Usage
 
-After compilation, the program will begin computing prime numbers starting from the last prime saved in the `primes.txt` file.
+After compilation, the program will begin computing prime numbers starting from the last prime saved in the `primes.bin` file.
 
 ### Key Features:
 
@@ -70,6 +71,27 @@ After compilation, the program will begin computing prime numbers starting from 
   - Total number of primes found so far.
   - The number of digits in the largest prime found in the batch.
   - Time taken for the batch to complete.
+
+- **Resuming Computation**: The program automatically resumes from the last prime stored in the `primes.bin` file, ensuring continuity across sessions.
+
+- **Conversion to Plain Text**: Use the `--read` flag to convert the binary stored primes to a human-readable plain text file.
+
+### Running the Program
+
+- **Start Prime Calculation**:
+  ```bash
+  ./PrimeMiner
+  ```
+
+- **Limit the Number of Batches**:
+  ```bash
+  ./PrimeMiner --limit 10
+  ```
+
+- **Convert Binary Primes to Plain Text**:
+  ```bash
+  ./PrimeMiner --read
+  ```
 
 ### Sample Output:
 
@@ -87,10 +109,24 @@ You can modify the following constants in `main.cu` to optimize for your GPU or 
 
 ## Resuming from Last Prime
 
-The program saves each prime found to `primes.txt` as it processes batches. When restarted, it will automatically resume from the last prime saved in the file, making it easy to run long mining sessions without losing progress.
+The program saves each prime found to `primes.bin` in a binary format using delta encoding. When restarted, it will automatically resume from the last prime saved in the file, making it easy to run long mining sessions without losing progress.
 
 ### File Structure:
-- `primes.txt`: Contains the list of primes found, one per line.
+- **`primes.bin`**: Contains the delta-encoded list of primes in binary format.
+- **`primes_converted.txt`**: Generated when using the `--read` flag, containing the list of primes in plain text format.
+
+## Conversion to Plain Text
+
+To convert the binary stored primes to a human-readable plain text file, use the `--read` flag. This will generate a `primes_converted.txt` file with all the primes separated by spaces.
+
+### Example:
+```bash
+./PrimeMiner --read
+```
+Output:
+```
+Conversion complete. Primes written to primes_converted.txt
+```
 
 ## Performance
 

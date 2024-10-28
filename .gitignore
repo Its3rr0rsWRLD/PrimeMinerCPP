@@ -33,3 +33,5 @@
 .vscode/settings.json
 main.exp
 primes.txt
+primes_converted.txt
+main.cu
