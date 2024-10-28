@@ -83,7 +83,20 @@ void bulk_save_primes(const std::vector<long long>& primes) {
     outfile.close();
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    int batch_limit = -1;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--limit") {
+            if (i + 1 < argc) {
+                batch_limit = std::stoi(argv[i + 1]);
+                ++i;
+            } else {
+                std::cerr << "Error: --limit requires a value" << std::endl;
+                return 1;
+            }
+        }
+    }
+
     long long current = get_last_prime() + 1;
     long long total_primes = 0;
     int max_digits = 0;
@@ -150,12 +163,18 @@ int main() {
                   << " | Longest Prime Digits: " << max_digits
                   << " | Batch Runtime: " << batch_runtime.count() << " seconds" << std::endl;
 
+        if (batch_limit > 0 && batch_counter >= batch_limit) {
+            running = false;
+        }
+
         current = high + 1;
     }
 
     auto total_runtime = std::chrono::steady_clock::now() - start_time;
     std::cout << "Total Runtime: " << std::chrono::duration_cast<std::chrono::seconds>(total_runtime).count()
               << " seconds" << std::endl;
+    std::cout << "Total Numbers Calculated: " << batch_counter * SEGMENT_SIZE << std::endl;
+    std::cout << "Total Primes Found: " << total_primes << std::endl;
 
     return 0;
 }
