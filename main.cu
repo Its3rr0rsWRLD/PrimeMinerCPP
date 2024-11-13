@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cuda.h>
 #include <cstring>
+#include <stdint.h>
 
 #define FILE_PATH "primes.bin"
 #define TEXT_FILE_PATH "primes_converted.txt"
@@ -16,15 +17,20 @@ __device__ inline long long cuda_max(long long a, long long b) {
     return (a > b) ? a : b;
 }
 
-__global__ void sieve_kernel(char* d_is_prime, long long low, long long high, int* d_primes, int num_primes) {
+__global__ void sieve_kernel(uint8_t* d_is_prime, long long current, long long high, int* d_primes, long long* d_offsets, int num_primes) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int i = idx; i < num_primes; i += blockDim.x * gridDim.x) {
+    int total_threads = blockDim.x * gridDim.x;
+
+    for (int i = idx; i < num_primes; i += total_threads) {
         int p = d_primes[i];
+        long long start = d_offsets[i];
+        if (start == -1 || start > high) continue;
         long long p_long = (long long)p;
-        long long start = cuda_max(p_long * p_long, ((low + p_long - 1) / p_long) * p_long);
-        if (start > high) continue;
-        for (long long j = start; j <= high; j += p_long) {
-            d_is_prime[j - low] = 0;
+        for (long long j = start; j <= high; j += 2 * p_long) {
+            long long index = (j - current) / 2;
+            int byte_index = index / 8;
+            int bit_index = index % 8;
+            d_is_prime[byte_index] &= ~(1 << bit_index);
         }
     }
 }
@@ -70,12 +76,12 @@ long long get_last_prime() {
 }
 
 void bulk_save_primes(const std::vector<long long>& primes) {
+    static long long last_prime = get_last_prime();
     std::ofstream outfile(FILE_PATH, std::ios::app | std::ios::binary);
     if (!outfile.is_open()) {
         std::cerr << "Error opening file for writing!" << std::endl;
         return;
     }
-    static long long last_prime = get_last_prime();
     for (const auto& prime : primes) {
         long long delta = prime - last_prime;
         outfile.write(reinterpret_cast<const char*>(&delta), sizeof(delta));
@@ -128,37 +134,73 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     long long current = get_last_prime() + 1;
+    if (current % 2 == 0) current++;
     long long total_primes = 0;
     int max_digits = 0;
     int batch_counter = 0;
     bool running = true;
     auto start_time = std::chrono::steady_clock::now();
+
+    uint8_t* d_is_prime;
+    int* d_primes = nullptr;
+    long long* d_offsets = nullptr;
+    std::vector<uint8_t> h_is_prime((SEGMENT_SIZE + 7) / 8);
+
     while (running) {
         auto batch_start_time = std::chrono::steady_clock::now();
-        long long high = current + SEGMENT_SIZE - 1;
+        long long high = current + 2 * (SEGMENT_SIZE - 1);
         int sqrt_high = static_cast<int>(std::sqrt(high)) + 1;
         std::vector<int> primes = simple_sieve(sqrt_high);
-        char* d_is_prime;
-        int* d_primes;
         int num_primes = primes.size();
-        cudaMalloc((void**)&d_is_prime, SEGMENT_SIZE * sizeof(char));
-        cudaMalloc((void**)&d_primes, num_primes * sizeof(int));
+
+        std::vector<long long> offsets(num_primes);
+        for (int i = 0; i < num_primes; ++i) {
+            int p = primes[i];
+            if (p == 2) {
+                offsets[i] = -1;
+                continue;
+            }
+            long long p_long = (long long)p;
+            long long start = (current + p_long - 1) / p_long * p_long;
+            if (start % 2 == 0) start += p_long;
+            if (start < p_long * p_long) start = p_long * p_long;
+            if (start < current) start += 2 * p_long;
+            offsets[i] = start;
+        }
+
+        static int max_num_primes = 0;
+        if (num_primes > max_num_primes) {
+            if (d_primes) cudaFree(d_primes);
+            if (d_offsets) cudaFree(d_offsets);
+            cudaMalloc((void**)&d_primes, num_primes * sizeof(int));
+            cudaMalloc((void**)&d_offsets, num_primes * sizeof(long long));
+            max_num_primes = num_primes;
+        }
+
+        cudaMalloc((void**)&d_is_prime, h_is_prime.size() * sizeof(uint8_t));
         cudaMemcpy(d_primes, primes.data(), num_primes * sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemset(d_is_prime, 1, SEGMENT_SIZE * sizeof(char));
+        cudaMemcpy(d_offsets, offsets.data(), num_primes * sizeof(long long), cudaMemcpyHostToDevice);
+        cudaMemset(d_is_prime, 0xFF, h_is_prime.size() * sizeof(uint8_t));
+
         int threadsPerBlock = THREADS_PER_BLOCK;
         int blocks = (num_primes + threadsPerBlock - 1) / threadsPerBlock;
-        sieve_kernel<<<blocks, threadsPerBlock>>>(d_is_prime, current, high, d_primes, num_primes);
+        sieve_kernel<<<blocks, threadsPerBlock>>>(d_is_prime, current, high, d_primes, d_offsets, num_primes);
         cudaDeviceSynchronize();
-        std::vector<char> h_is_prime(SEGMENT_SIZE);
-        cudaMemcpy(h_is_prime.data(), d_is_prime, SEGMENT_SIZE * sizeof(char), cudaMemcpyDeviceToHost);
+
+        cudaMemcpy(h_is_prime.data(), d_is_prime, h_is_prime.size() * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+
         std::vector<long long> segment_primes;
         for (long long i = 0; i < SEGMENT_SIZE; ++i) {
-            long long num = current + i;
-            if (num < 2) continue;
-            if (h_is_prime[i]) {
-                segment_primes.push_back(num);
+            int byte_index = i / 8;
+            int bit_index = i % 8;
+            if (h_is_prime[byte_index] & (1 << bit_index)) {
+                long long num = current + 2 * i;
+                if (num >= 2) {
+                    segment_primes.push_back(num);
+                }
             }
         }
+
         long long primes_found_in_batch = segment_primes.size();
         total_primes += primes_found_in_batch;
         if (!segment_primes.empty()) {
@@ -169,8 +211,8 @@ int main(int argc, char* argv[]) {
             }
             bulk_save_primes(segment_primes);
         }
+
         cudaFree(d_is_prime);
-        cudaFree(d_primes);
         batch_counter++;
         auto batch_end_time = std::chrono::steady_clock::now();
         std::chrono::duration<double> batch_runtime = batch_end_time - batch_start_time;
@@ -181,8 +223,12 @@ int main(int argc, char* argv[]) {
         if (batch_limit > 0 && batch_counter >= batch_limit) {
             running = false;
         }
-        current = high + 1;
+        current = high + 2;
     }
+
+    cudaFree(d_primes);
+    cudaFree(d_offsets);
+
     auto total_runtime = std::chrono::steady_clock::now() - start_time;
     std::cout << "\nTotal Runtime: " << std::chrono::duration_cast<std::chrono::seconds>(total_runtime).count()
               << " seconds" << std::endl;
